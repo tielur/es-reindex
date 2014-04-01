@@ -39,6 +39,8 @@ Refer to script's help:
 
 ## Changelog
 
++ __0.0.8__: Add option -i to ignore creating the destination index and
+  only copy documents 
 + __0.0.7__: Document header arguments `_timestamp` and `_ttl` are copied as well
 + __0.0.6__: Document headers in bulks are now assembled and properly JSON dumped
 + __0.0.5__: Merge fix for trailing slash in urls (@ichinco), formatting cleanup

@@ -4,7 +4,7 @@ require 'bundler/setup'
 require 'rest-client'
 require 'oj'
 
-VERSION = '0.0.7'
+VERSION = '0.0.8'
 
 STDOUT.sync = true
 
@@ -15,11 +15,12 @@ and mapping copied.
 
 Usage:
 
-  #{__FILE__} [-r] [-f <frame>] [source_url/]<index> [destination_url/]<index>
+  #{__FILE__} [-r] [-u] [-i] [-f <frame>] [source_url/]<index> [destination_url/]<index>
 
     - -r - remove the index in the new location first
     - -f - specify frame size to be obtained with one fetch during scrolling
     - -u - update existing documents (default: only create non-existing)
+    - -i - skip creating a new index, only copy documents
     - optional source/destination urls default to http://127.0.0.1:9200
 \n"
   exit 1
@@ -34,6 +35,7 @@ while ARGV[0]
   when '-r' then remove = true
   when '-f' then frame = ARGV.shift.to_i
   when '-u' then update = true
+  when '-i' then create_index = false
   else
     u = arg.chomp '/'
     !src ? (src = u) : !dst ? (dst = u) :
@@ -89,40 +91,41 @@ end
 retried_request(:delete, "#{durl}/#{didx}") \
   if remove && retried_request(:get, "#{durl}/#{didx}/_status")
 
-# (re)create destination index
-unless retried_request(:get, "#{durl}/#{didx}/_status")
-  # obtain the original index settings first
-  unless settings = retried_request(:get, "#{surl}/#{sidx}/_settings")
-    warn "Failed to obtain original index '#{surl}/#{sidx}' settings!"
-    exit 1
-  end
-  settings = Oj.load settings
-  sidx = settings.keys[0]
-  settings[sidx].delete 'index.version.created'
-  printf 'Creating \'%s/%s\' index with settings from \'%s/%s\'... ',
-      durl, didx, surl, sidx
-  unless retried_request(:post, "#{durl}/#{didx}", Oj.dump(settings[sidx]))
-    puts 'FAILED!'
-    exit 1
-  else
-    puts 'OK.'
-  end
-  unless mappings = retried_request(:get, "#{surl}/#{sidx}/_mapping")
-    warn "Failed to obtain original index '#{surl}/#{sidx}' mappings!"
-    exit 1
-  end
-  mappings = Oj.load mappings
-  mappings[sidx].each_pair{|type, mapping|
-    printf 'Copying mapping \'%s/%s/%s\'... ', durl, didx, type
-    unless retried_request(:put, "#{durl}/#{didx}/#{type}/_mapping",
-        Oj.dump({type => mapping}))
+# (re)create destination index if create_index is true
+if create_index
+  unless retried_request(:get, "#{durl}/#{didx}/_status")
+    # obtain the original index settings first
+    unless settings = retried_request(:get, "#{surl}/#{sidx}/_settings")
+      warn "Failed to obtain original index '#{surl}/#{sidx}' settings!"
+      exit 1
+    end
+    settings = Oj.load settings
+    sidx = settings.keys[0]
+    settings[sidx].delete 'index.version.created'
+    printf 'Creating \'%s/%s\' index with settings from \'%s/%s\'... ',
+        durl, didx, surl, sidx
+    unless retried_request(:post, "#{durl}/#{didx}", Oj.dump(settings[sidx]))
       puts 'FAILED!'
       exit 1
     else
       puts 'OK.'
     end
-  }
-  
+    unless mappings = retried_request(:get, "#{surl}/#{sidx}/_mapping")
+      warn "Failed to obtain original index '#{surl}/#{sidx}' mappings!"
+      exit 1
+    end
+    mappings = Oj.load mappings
+    mappings[sidx].each_pair{|type, mapping|
+      printf 'Copying mapping \'%s/%s/%s\'... ', durl, didx, type
+      unless retried_request(:put, "#{durl}/#{didx}/#{type}/_mapping",
+          Oj.dump({type => mapping}))
+        puts 'FAILED!'
+        exit 1
+      else
+        puts 'OK.'
+      end
+    }
+  end
 end
 
 printf "Copying '%s/%s' to '%s/%s'... \n", surl, sidx, durl, didx
